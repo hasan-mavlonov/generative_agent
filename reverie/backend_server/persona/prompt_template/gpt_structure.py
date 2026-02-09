@@ -9,7 +9,27 @@ from typing import Callable, Optional
 from openai import OpenAI
 from utils import openai_api_key  # your repo already has this
 
-client = OpenAI(api_key=openai_api_key)
+
+def _resolve_api_key() -> Optional[str]:
+    key = (openai_api_key or "").strip()
+    return key or None
+
+
+def _get_client() -> OpenAI:
+    """Build an OpenAI client that never sends an empty Bearer token.
+
+    Passing ``api_key=""`` causes httpx/httpcore to fail with
+    ``Illegal header value b'Bearer '``. We normalize empty keys to ``None`` so
+    the SDK can read ``OPENAI_API_KEY`` directly from the environment, and we
+    provide a clear actionable error when no key is configured.
+    """
+    api_key = _resolve_api_key()
+    if api_key is None:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. Export a valid key before running the "
+            "simulation (for example: `export OPENAI_API_KEY=...`)."
+        )
+    return OpenAI(api_key=api_key)
 
 def temp_sleep(seconds: float = 0.1):
     time.sleep(seconds)
@@ -20,6 +40,7 @@ def _responses_text(resp) -> str:
 
 def ChatGPT_single_request(prompt: str, model: str = "gpt-4o-mini") -> str:
     temp_sleep()
+    client = _get_client()
     resp = client.responses.create(
         model=model,
         input=prompt,
@@ -29,6 +50,7 @@ def ChatGPT_single_request(prompt: str, model: str = "gpt-4o-mini") -> str:
 def GPT4_request(prompt: str, model: str = "gpt-4o") -> str:
     temp_sleep()
     try:
+        client = _get_client()
         resp = client.responses.create(
             model=model,
             input=prompt,
@@ -40,6 +62,7 @@ def GPT4_request(prompt: str, model: str = "gpt-4o") -> str:
 
 def ChatGPT_request(prompt: str, model: str = "gpt-4o-mini") -> str:
     try:
+        client = _get_client()
         resp = client.responses.create(
             model=model,
             input=prompt,
@@ -132,5 +155,6 @@ def get_embedding(text: str, model: str = "text-embedding-3-small"):
     text = (text or "").replace("\n", " ").strip()
     if not text:
         text = "this is blank"
+    client = _get_client()
     resp = client.embeddings.create(model=model, input=text)
     return resp.data[0].embedding
